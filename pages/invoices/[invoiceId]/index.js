@@ -1,8 +1,10 @@
 import React from "react";
 import { useRouter } from "next/router";
+import { MongoClient, ObjectId } from "mongodb";
 
-const InvoiceDetails = () => {
+const InvoiceDetails = (props) => {
   const router = useRouter();
+  const { data } = props;
 
   const goBack = () => {
     router.push("/");
@@ -18,11 +20,16 @@ const InvoiceDetails = () => {
       <div className="invoice_details_header">
         <div className="details_status">
           <p>Status</p>
-          <button className="pending_status">pending</button>
+          <button className="pending_status">{data.status}</button>
         </div>
 
         <div className="details_btns">
-          <button className="edit_btn">Edit</button>
+          <button
+            className="edit_btn"
+            onClick={() => router.push(`/edit/${data.id}`)}
+          >
+            Edit
+          </button>
 
           <button className="delete_btn">Delete</button>
 
@@ -34,14 +41,14 @@ const InvoiceDetails = () => {
       <div className="invoice_details">
         <div className="details_box">
           <div>
-            <h4>AL13948</h4>
-            <p>Re-branding</p>
+            <h4>{data.id.substr(0, 6).toUpperCase()}</h4>
+            <p>{data.description}</p>
           </div>
           <div>
-            <p>Block - B, Road -41</p>
-            <p>Portland</p>
-            <p>Oregon 97218</p>
-            <p>United States</p>
+            <p>{data.senderAddress.street}</p>
+            <p>{data.senderAddress.city}</p>
+            <p>{data.senderAddress.zipCode}</p>
+            <p>{data.senderAddress.country}</p>
           </div>
         </div>
 
@@ -50,27 +57,27 @@ const InvoiceDetails = () => {
           <div>
             <div className="invoice_created_date">
               <p>Invoice Date</p>
-              <h4>6/26/2022</h4>
+              <h4>{data.createdAt}</h4>
             </div>
             <div>
               <p className="invoice_payment">Payment Due</p>
-              <h4>6/26/2022</h4>
+              <h4>{data.paymentDue}</h4>
             </div>
           </div>
 
           {/* ---- invoice client address ---- */}
           <div className="invoice_client_address">
             <p>Bill To</p>
-            <h4>DB WedDev</h4>
-            <p>1234 Money Ave</p>
-            <p>Portland</p>
-            <p>Oregon 97218</p>
-            <p>United States</p>
+            <h4>{data.clientName}</h4>
+            <p>{data.clientAddress.street}</p>
+            <p>{data.clientAddress.city}</p>
+            <p>{data.clientAddress.zipCode}</p>
+            <p>{data.clientAddress.country}</p>
           </div>
 
           <div>
             <p>Send to</p>
-            <h4>mallory@dbwebdev.io</h4>
+            <h4>{data.clientEmail}</h4>
           </div>
         </div>
         {/* ---- invoice items ---- */}
@@ -84,27 +91,29 @@ const InvoiceDetails = () => {
             </li>
 
             {/* ---- invoice item ---- */}
-            <li className="list_item">
-              <div className="item_name_box">
-                <h5>Ecommerce Website</h5>
-              </div>
-              <div className="list_item_box">
-                <p>2</p>
-              </div>
-              <div className="list_item_box">
-                <p>$225</p>
-              </div>
-              <div className="list_item_box">
-                <h5>$450</h5>
-              </div>
-            </li>
+            {data.items?.map((item, index) => (
+              <li className="list_item" key={index}>
+                <div className="item_name_box">
+                  <h5>{item.name}</h5>
+                </div>
+                <div className="list_item_box">
+                  <p>{item.quantity}</p>
+                </div>
+                <div className="list_item_box">
+                  <p>{item.price}</p>
+                </div>
+                <div className="list_item_box">
+                  <h5>{item.total}</h5>
+                </div>
+              </li>
+            ))}
           </ul>
         </div>
 
         {/* ---- grand total ---- */}
         <div className="grand_total">
           <h5>Grand Total</h5>
-          <h2>$450</h2>
+          <h2>${data.total}</h2>
         </div>
       </div>
     </div>
@@ -112,3 +121,58 @@ const InvoiceDetails = () => {
 };
 
 export default InvoiceDetails;
+
+export async function getStaticPaths() {
+  const client = await MongoClient.connect(
+    "mongodb+srv://dbwebdev:admin$1234@cluster0.dycocpr.mongodb.net/test?retryWrites=true&w=majority",
+    { useNewUrlParser: true }
+  );
+
+  const db = client.db();
+  const collection = db.collection("allInvoices");
+
+  const invoices = await collection.find({}, { _id: 1 }).toArray();
+
+  return {
+    fallback: "blocking",
+    paths: invoices.map((invoice) => ({
+      params: {
+        invoiceId: invoice._id.toString(),
+      },
+    })),
+  };
+}
+
+export async function getStaticProps(context) {
+  const { invoiceId } = context.params;
+
+  const client = await MongoClient.connect(
+    "mongodb+srv://dbwebdev:admin$1234@cluster0.dycocpr.mongodb.net/test?retryWrites=true&w=majority",
+    { useNewUrlParser: true }
+  );
+
+  const db = client.db();
+  const collection = db.collection("allInvoices");
+  const invoice = await collection.findOne({
+    _id: new ObjectId(invoiceId),
+  });
+
+  return {
+    props: {
+      data: {
+        id: invoice._id.toString(),
+        senderAddress: invoice.senderAddress,
+        clientAddress: invoice.clientAddress,
+        clientName: invoice.clientName,
+        clientEmail: invoice.clientEmail,
+        description: invoice.description,
+        createdAt: invoice.createdAt,
+        paymentDue: invoice.paymentDue,
+        items: invoice.items,
+        total: invoice.total,
+        status: invoice.status,
+      },
+    },
+    revalidate: 1,
+  };
+}
